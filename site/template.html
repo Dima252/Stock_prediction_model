@@ -1,0 +1,583 @@
+<title>Oversold Breadth Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#F4F5F7; --panel:#FFFFFF; --panel-2:#EDEFF2;
+  --ink:#0E1116; --ink-2:#414B57; --ink-3:#6B7684;
+  --line:#DCE0E6; --line-2:#C7CDD6;
+  --signal:#B45309; --signal-ink:#7C3A06; --signal-bg:#FDF3E3;
+  --pos:#0F766E; --neg:#9F1239;
+  --dormant:#8A94A2;
+  --shadow:0 1px 2px rgba(14,17,22,.06),0 8px 24px -12px rgba(14,17,22,.14);
+}
+:root:not([data-theme="light"]){
+  @media (prefers-color-scheme:dark){
+    --ground:#0B0E13; --panel:#141920; --panel-2:#1B222B;
+    --ink:#EDF0F4; --ink-2:#AEB8C4; --ink-3:#7B8794;
+    --line:#242C36; --line-2:#333D49;
+    --signal:#E8A33D; --signal-ink:#F5C77E; --signal-bg:#2A1F0E;
+    --pos:#4FD1C5; --neg:#F2789B;
+    --dormant:#5D6874;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0B0E13; --panel:#141920; --panel-2:#1B222B;
+  --ink:#EDF0F4; --ink-2:#AEB8C4; --ink-3:#7B8794;
+  --line:#242C36; --line-2:#333D49;
+  --signal:#E8A33D; --signal-ink:#F5C77E; --signal-bg:#2A1F0E;
+  --pos:#4FD1C5; --neg:#F2789B;
+  --dormant:#5D6874;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+h1,h2,h3{text-wrap:balance;margin:0;line-height:1.2;letter-spacing:-.015em}
+h1{font-size:clamp(28px,4.2vw,44px);font-weight:700}
+h2{font-size:clamp(21px,2.6vw,27px);font-weight:600}
+h3{font-size:17px;font-weight:600}
+p{margin:0}
+a{color:inherit}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:500;
+}
+
+/* ---------- masthead ---------- */
+header{border-bottom:1px solid var(--line);background:var(--panel)}
+.mast{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.mast .id{display:flex;align-items:baseline;gap:12px}
+.mast .id b{font-size:16px;font-weight:600;letter-spacing:-.01em}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{
+  font:inherit;font-size:13px;font-weight:500;color:var(--ink-2);background:none;
+  border:1px solid transparent;border-radius:2px;padding:6px 11px;cursor:pointer;
+}
+nav button:hover{color:var(--ink);background:var(--panel-2)}
+nav button[aria-current="true"]{color:var(--ink);border-color:var(--line-2);background:var(--panel-2)}
+nav button:focus-visible,input:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+
+/* ---------- the readout ---------- */
+.readout{padding:44px 0 36px;border-bottom:1px solid var(--line)}
+.state-line{display:flex;align-items:center;gap:14px;margin-bottom:26px;flex-wrap:wrap}
+.chip{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;letter-spacing:.12em;
+  text-transform:uppercase;padding:6px 12px;border-radius:2px;border:1px solid;
+}
+.chip.dormant{color:var(--dormant);border-color:var(--line-2);background:var(--panel-2)}
+.chip.active{color:var(--signal);border-color:var(--signal);background:var(--signal-bg)}
+.session{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3)}
+
+.gauge-grid{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:36px;align-items:end}
+@media(max-width:760px){.gauge-grid{grid-template-columns:1fr;gap:26px}}
+.bignum{font-family:"IBM Plex Mono",monospace;font-size:clamp(52px,9vw,86px);font-weight:600;line-height:.92;letter-spacing:-.04em}
+.bignum.on{color:var(--signal)}
+.bigsub{margin-top:10px;font-size:13px;color:var(--ink-2);max-width:34ch}
+.threshold-note{margin-top:6px;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3)}
+
+figure{margin:0}
+figcaption{margin-top:8px;font-size:12px;color:var(--ink-3);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+svg{display:block;width:100%;height:auto;overflow:visible}
+
+/* ---------- panels ---------- */
+main{padding:36px 0 80px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:24px;box-shadow:var(--shadow)}
+.stack{display:flex;flex-direction:column;gap:22px}
+.section{display:none}
+.section.on{display:block}
+.lede{color:var(--ink-2);max-width:66ch;font-size:15px}
+.rule{border:0;border-top:1px solid var(--line);margin:22px 0}
+
+/* empty state — the most common state, so it gets real design */
+.empty{
+  border:1px dashed var(--line-2);border-radius:3px;padding:34px 26px;text-align:center;
+  background:var(--panel-2);
+}
+.empty .mark{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dormant);
+}
+.empty h3{margin:12px 0 8px}
+.empty p{color:var(--ink-2);max-width:52ch;margin:0 auto;font-size:14px}
+
+table{width:100%;border-collapse:collapse;font-size:14px}
+.tblwrap{overflow-x:auto}
+th{
+  text-align:left;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:500;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  padding:0 12px 9px 0;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+td{padding:10px 12px 10px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.tk{font-family:"IBM Plex Mono",monospace;font-weight:600}
+.pos{color:var(--pos)}.neg{color:var(--neg)}
+
+/* ---------- lookup ---------- */
+.search{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+input[type=search]{
+  font:inherit;font-family:"IBM Plex Mono",monospace;font-size:15px;text-transform:uppercase;
+  padding:11px 14px;border:1px solid var(--line-2);border-radius:2px;
+  background:var(--ground);color:var(--ink);width:190px;
+}
+input[type=search]::placeholder{text-transform:none;color:var(--ink-3);font-family:Archivo,sans-serif}
+.hint{font-size:13px;color:var(--ink-3);align-self:center}
+
+.checks{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:3px;overflow:hidden;margin:18px 0}
+.check{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 15px;background:var(--panel)}
+.check .box{
+  width:18px;height:18px;border-radius:2px;border:1.5px solid var(--line-2);
+  display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--panel);
+}
+.check.yes .box{background:var(--pos);border-color:var(--pos)}
+.check.no .box{background:transparent;border-color:var(--line-2)}
+.check .what{font-size:14px}
+.check .what small{display:block;color:var(--ink-3);font-size:12px;margin-top:2px}
+.check .val{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink-2)}
+.verdict{padding:16px 18px;border-radius:3px;border:1px solid;font-size:14px}
+.verdict.no{border-color:var(--line-2);background:var(--panel-2);color:var(--ink-2)}
+.verdict.yes{border-color:var(--signal);background:var(--signal-bg);color:var(--signal-ink)}
+
+/* ---------- prose ---------- */
+.prose p{margin:0 0 14px;color:var(--ink-2);max-width:68ch;font-size:15px}
+.prose h3{margin:26px 0 10px;color:var(--ink)}
+.prose ul{margin:0 0 14px;padding-left:20px;color:var(--ink-2);max-width:68ch;font-size:15px}
+.prose li{margin-bottom:7px}
+.prose strong{color:var(--ink);font-weight:600}
+code{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--panel-2);padding:2px 5px;border-radius:2px}
+pre{background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:16px;overflow-x:auto;margin:0 0 16px}
+pre code{background:none;padding:0;font-size:13px;line-height:1.7}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:3px;overflow:hidden;margin:18px 0}
+.kpi{background:var(--panel);padding:16px}
+.kpi .k{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.kpi .v{font-family:"IBM Plex Mono",monospace;font-size:23px;font-weight:600;margin-top:5px;letter-spacing:-.02em}
+.kpi .n{font-size:12px;color:var(--ink-3);margin-top:3px}
+
+.callout{border-left:2px solid var(--signal);padding:2px 0 2px 16px;margin:18px 0;color:var(--ink-2);font-size:15px;max-width:66ch}
+.callout strong{color:var(--ink)}
+
+footer{border-top:1px solid var(--line);padding:26px 0 40px;color:var(--ink-3);font-size:13px}
+footer p{max-width:70ch;margin-bottom:8px}
+</style>
+
+<header>
+  <div class="wrap mast">
+    <div class="id">
+      <b>Oversold Breadth Monitor</b>
+      <span class="eyebrow" id="sessionTag"></span>
+    </div>
+    <nav id="nav">
+      <button data-t="today" aria-current="true">Today</button>
+      <button data-t="ticker">Check a ticker</button>
+      <button data-t="how">How it works</button>
+      <button data-t="evidence">The evidence</button>
+    </nav>
+  </div>
+</header>
+
+<div class="readout">
+  <div class="wrap">
+    <div class="state-line">
+      <span class="chip dormant" id="stateChip">—</span>
+      <span class="session" id="stateWhen"></span>
+    </div>
+    <div class="gauge-grid">
+      <div>
+        <div class="bignum" id="breadthNum">—</div>
+        <div class="bigsub" id="breadthSub"></div>
+        <div class="threshold-note" id="threshNote"></div>
+      </div>
+      <figure>
+        <svg id="chart" viewBox="0 0 760 150" role="img" aria-label="Oversold breadth history"></svg>
+        <figcaption>
+          <span id="chartRange"></span>
+          <span id="chartActive"></span>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</div>
+
+<main class="wrap">
+
+<!-- ================= TODAY ================= -->
+<section class="section on" data-s="today">
+  <div class="stack">
+    <div class="panel" id="todayPanel"></div>
+    <div class="panel prose">
+      <span class="eyebrow">Why it is quiet</span>
+      <h2 style="margin:8px 0 12px">This monitor is silent most of the time</h2>
+      <p>The strategy waits for the <strong>whole market</strong> to sell off, not for one
+      stock to look cheap. That condition has held on roughly <strong>17% of trading
+      days</strong> over 27 years. On the other 83%, there is nothing to say, and saying
+      nothing is the correct output.</p>
+      <p>If you find yourself checking daily hoping for a signal, that is the failure mode
+      this page is built to resist.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= TICKER ================= -->
+<section class="section" data-s="ticker">
+  <div class="stack">
+    <div class="panel">
+      <span class="eyebrow">Conditional statistics</span>
+      <h2 style="margin:8px 0 10px">Check a ticker</h2>
+      <p class="lede" style="margin-bottom:18px">This does not return a recommendation. It shows
+      which of the four conditions currently hold, and what has historically happened to
+      this name when they all did.</p>
+      <div class="search">
+        <input type="search" id="q" placeholder="Ticker, e.g. AAPL" autocomplete="off" spellcheck="false">
+        <span class="hint" id="qhint"></span>
+      </div>
+      <div id="tickerOut"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= HOW ================= -->
+<section class="section" data-s="how">
+  <div class="stack">
+    <div class="panel prose">
+      <span class="eyebrow">The rule</span>
+      <h2 style="margin:8px 0 14px">Four conditions, no model</h2>
+      <p>There is no machine-learning model behind this page. A model was built, tested, and
+      discarded because it did not survive an honest out-of-sample test. What remains is four
+      lines:</p>
+<pre><code>dist_sma200_atr &gt; 0        # the stock's long-term uptrend is intact
+oversold_breadth &gt; 0.20    # the whole market is oversold, not just this name
+resid_ret5_atr &gt; -0.5      # the fall is NOT specific to this company
+rsi2 &lt; 10                  # a sharp short-term washout</code></pre>
+      <p>Entry at the next open. Exit when the close recovers above its 5-day average, or a
+      stop one ATR below entry, or ten sessions — whichever comes first. Typical holding
+      period is <strong>2.2 sessions</strong>.</p>
+
+      <h3>Why market-wide, not stock-specific</h3>
+      <p>The third condition is the one people find surprising. The obvious idea is that a
+      stock falling <em>on its own</em> should bounce hardest. That was tested first, and it
+      was <strong>negative across all twelve exit schemes</strong>.</p>
+      <p>The reason it fails, in hindsight: a stock falling alone is falling for a
+      company-specific reason, and that reason does not resolve itself in five days. A stock
+      falling because <em>everything</em> is falling has no such reason attached to it.
+      Inverting the failed hypothesis produced the best rule in the study.</p>
+
+      <h3>Why the exit is a signal, not a target</h3>
+      <p>Twelve exit schemes were compared. Ranked by return per trade, the widest bracket
+      won — but it held positions four times longer. Ranked by <strong>return per day of
+      capital committed</strong>, the ordering completely inverted:</p>
+      <div class="tblwrap"><table>
+        <thead><tr><th>Exit</th><th>R / trade</th><th>Hold</th><th>R / day</th></tr></thead>
+        <tbody>
+          <tr><td>Close above 5-day average</td><td class="num">+0.080</td><td class="num">2.2d</td><td class="num pos">0.0352</td></tr>
+          <tr><td>1.0R target, 5 sessions</td><td class="num">+0.085</td><td class="num">2.7d</td><td class="num">0.0326</td></tr>
+          <tr><td>2.0R target, 10 sessions</td><td class="num">+0.114</td><td class="num">4.8d</td><td class="num">0.0241</td></tr>
+          <tr><td>4.0R target, 30 sessions</td><td class="num">+0.151</td><td class="num">9.6d</td><td class="num neg">0.0159</td></tr>
+        </tbody>
+      </table></div>
+      <p style="margin-top:14px">The widest exit looks twice as good per trade and is half as
+      good per unit of capital. It had quietly stopped being a mean-reversion trade and become
+      buy-and-hold.</p>
+    </div>
+
+    <div class="panel prose">
+      <span class="eyebrow">Method</span>
+      <h2 style="margin:8px 0 14px">How it was tested</h2>
+      <p>Financial backtests fail in specific, well-documented ways. Four defences were built
+      before any result was believed.</p>
+
+      <h3>1. The harness was tested on pure noise first</h3>
+      <p>Before testing any strategy, the validation code was fed random numbers with no
+      signal in them at all. A correct harness must find nothing.</p>
+      <div class="kpis">
+        <div class="kpi"><div class="k">Purged CV</div><div class="v">0.4986</div><div class="n">AUC on pure noise — correct</div></div>
+        <div class="kpi"><div class="k">Naive CV</div><div class="v" style="color:var(--neg)">0.5610</div><div class="n">AUC on the same noise</div></div>
+        <div class="kpi"><div class="k">Naive CV</div><div class="v" style="color:var(--neg)">+0.65R</div><div class="n">"profit" per trade, from nothing</div></div>
+      </div>
+      <div class="callout">An ordinary cross-validation invents an AUC of 0.561 and
+      <strong>+0.65R per trade out of pure noise</strong> — squarely inside the range people
+      report as a discovered edge. The cause is overlapping labels: trades that share
+      calendar time land on both sides of the split.</div>
+
+      <h3>2. Confidence intervals are computed over months, not trades</h3>
+      <p>Trades here are heavily clustered — a single oversold day can generate 180 positions
+      that all share one market bounce. Treating those as 180 independent observations
+      produces an interval roughly <strong>four times too narrow</strong>. Every interval on
+      this site resamples whole calendar blocks instead.</p>
+
+      <h3>3. Everything is compared against the same day</h3>
+      <p>The benchmark is not "the market" or "all trades" — it is a set of randomly chosen
+      liquid stocks bought on <em>the same day</em>. This removes the market, the regime and
+      the calendar in one step. It matters: an earlier version of this study measured against
+      a pooled benchmark and overstated its result by roughly 15×, because the model was
+      concentrating its picks into favourable months and being scored for it.</p>
+
+      <h3>4. The final test period was used once</h3>
+      <p>All decisions — features, setups, exits, model — were made on data up to 2020. The
+      2021–2025 period was scored once, at the end. A test set you tune against is not a test
+      set.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= EVIDENCE ================= -->
+<section class="section" data-s="evidence">
+  <div class="stack">
+    <div class="panel prose">
+      <span class="eyebrow">Result</span>
+      <h2 style="margin:8px 0 14px">What the rule did on unseen data</h2>
+      <p>Measured on 2021–2025, which was not used for any decision. "Edge" is the paired
+      same-day comparison against randomly chosen liquid stocks.</p>
+      <div class="kpis">
+        <div class="kpi"><div class="k">Trades</div><div class="v">12,627</div><div class="n">2021–2025</div></div>
+        <div class="kpi"><div class="k">R / trade</div><div class="v pos">+0.113</div><div class="n">after 8bps costs</div></div>
+        <div class="kpi"><div class="k">Same-day edge</div><div class="v pos">+0.094</div><div class="n">95% CI +0.032 to +0.157</div></div>
+        <div class="kpi"><div class="k">Hold</div><div class="v">2.25</div><div class="n">sessions</div></div>
+      </div>
+      <p>On the development period (1999–2020) the same measurement gave +0.042
+      [+0.007, +0.079]. Both clear zero, which is the minimum bar — and the out-of-sample
+      figure being larger than the in-sample one is unusual enough to treat with suspicion
+      rather than satisfaction.</p>
+
+      <h3>What did not survive</h3>
+      <p>Ten mean-reversion setups were tested. Four cleared zero in development;
+      <strong>one</strong> cleared it out of sample. That ratio is roughly what chance
+      produces among four marginal candidates — which is exactly why the holdout exists.</p>
+      <div class="tblwrap"><table>
+        <thead><tr><th>Setup</th><th>Dev edge</th><th>Out-of-sample</th><th>Survived</th></tr></thead>
+        <tbody id="survivors"></tbody>
+      </table></div>
+
+      <h3>The famous breakout systems lost money</h3>
+      <p>Minervini's volatility-contraction breakout, O'Neil's CANSLIM pivot and Darvas boxes
+      were all implemented with the trend templates, relative-strength ranking, base-depth and
+      market-regime filters their authors specify, and given a 60-day trailing stop with no
+      profit target so winners could run.</p>
+      <p>All three <strong>underperformed buying random liquid stocks and trailing them</strong>,
+      by 0.16 to 0.27R per trade, in development and out of sample. The one trend entry that
+      did work was Weinstein's stage-2 — an <em>early</em> entry as price clears a rising
+      30-week average, not an <em>extended</em> entry at a breakout pivot.</p>
+    </div>
+
+    <div class="panel prose">
+      <span class="eyebrow">Status</span>
+      <h2 style="margin:8px 0 14px">Live forward test</h2>
+      <p>The rule is being paper-traded forward, logged automatically each day. No orders are
+      placed. This is the only test that nothing has contaminated.</p>
+      <div class="kpis" id="fwdKpis"></div>
+      <div class="callout" id="fwdVerdict"></div>
+    </div>
+
+    <div class="panel prose">
+      <span class="eyebrow">Limits</span>
+      <h2 style="margin:8px 0 14px">Read this before believing any of it</h2>
+      <ul>
+        <li><strong>The edge is not confirmed.</strong> The forward test is the real test and
+        it has nowhere near enough observations yet.</li>
+        <li><strong>The holdout was read more than once</strong> across the project's
+        iterations. The rule was selected on development data before it was read, which
+        protects it, but the published interval does not price in the full search.</li>
+        <li><strong>Survivorship bias is present and unfixed.</strong> The universe is current
+        index membership, so companies that were delisted are missing. This inflates results,
+        including the benchmark.</li>
+        <li><strong>Positive in only 59% of years.</strong> 2002, 2013 and 2018 were clearly
+        negative. A bad year is normal, not evidence of breakage.</li>
+        <li><strong>Costs.</strong> The edge is robust to slippage because the benchmark pays
+        it too, but raw returns go negative beyond roughly 35bps round trip.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="wrap">
+  <p><strong>Not investment advice.</strong> This is a research tool documenting a statistical
+  study. It reports what has happened historically under specific conditions; it does not
+  predict what will happen, and the edge it describes is unconfirmed.</p>
+  <p id="gen"></p>
+</footer>
+
+<script>
+const DATA = /*__SNAPSHOT__*/null;
+
+const $ = s => document.querySelector(s);
+const fmt = (v,d=2) => v==null||!isFinite(v) ? "—" : v.toFixed(d);
+const sgn = (v,d=3) => v==null||!isFinite(v) ? "—" : (v>=0?"+":"")+v.toFixed(d);
+const cls = v => v==null?"":v>0?"pos":v<0?"neg":"";
+
+/* ---------- nav ---------- */
+$("#nav").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  document.querySelectorAll("#nav button").forEach(x=>x.setAttribute("aria-current", x===b));
+  document.querySelectorAll(".section").forEach(s=>s.classList.toggle("on", s.dataset.s===b.dataset.t));
+  window.scrollTo({top:0,behavior:"smooth"});
+});
+
+function boot(){
+  if(!DATA){ $("#todayPanel").innerHTML='<div class="empty"><div class="mark">No data</div><h3>Snapshot not built</h3><p>Run <code>scripts/14_build_site.py</code> to generate today\'s reading.</p></div>'; return; }
+  const R = DATA.regime;
+
+  /* ---- state readout ---- */
+  $("#sessionTag").textContent = DATA.session;
+  $("#stateWhen").textContent = "Session " + DATA.session;
+  const chip = $("#stateChip");
+  chip.textContent = R.active ? "Condition met" : "Dormant";
+  chip.className = "chip " + (R.active?"active":"dormant");
+
+  const bn = $("#breadthNum");
+  bn.textContent = (R.breadth*100).toFixed(1) + "%";
+  bn.classList.toggle("on", R.active);
+  $("#breadthSub").textContent = "of liquid US stocks are short-term oversold (RSI2 below 10) at today's close.";
+  $("#threshNote").textContent = "Threshold " + (R.threshold*100).toFixed(0) + "% · "
+    + (R.active ? "above" : "below") + " by "
+    + Math.abs(R.breadth-R.threshold).toFixed(3).replace("0.","")  + " pts";
+
+  drawChart(R);
+
+  /* ---- today panel ---- */
+  const p = $("#todayPanel");
+  if(!R.active || !DATA.candidates.length){
+    p.innerHTML = `<span class="eyebrow">Candidates</span>
+      <h2 style="margin:8px 0 16px">Nothing qualifies today</h2>
+      <div class="empty">
+        <div class="mark">${R.active?"Condition met · no names passed":"Market not oversold"}</div>
+        <h3>${R.active?"No stock met the remaining filters":"The strategy is dormant"}</h3>
+        <p>${R.active
+          ? "Breadth cleared the threshold but no individual name passed the trend, residual and washout filters."
+          : "Breadth is "+(R.breadth*100).toFixed(1)+"%, below the "+(R.threshold*100).toFixed(0)+"% gate. This is the normal state on about 83% of trading days."}</p>
+      </div>`;
+  } else {
+    const rows = DATA.candidates.sort((a,b)=>a.rsi2-b.rsi2).map(c=>`<tr>
+      <td class="tk">${c.ticker}</td>
+      <td class="num">${fmt(c.close)}</td>
+      <td class="num">${fmt(c.rsi2,1)}</td>
+      <td class="num">${sgn(c.resid,2)}</td>
+      <td class="num">${fmt(c.stop)}</td></tr>`).join("");
+    p.innerHTML = `<span class="eyebrow">Candidates</span>
+      <h2 style="margin:8px 0 6px">${DATA.candidates.length} name${DATA.candidates.length>1?"s":""} qualified</h2>
+      <p class="lede" style="margin-bottom:18px">Entry at tomorrow's open. Stop one ATR below.
+      Exit when the close recovers above its 5-day average, or after ten sessions.</p>
+      <div class="tblwrap"><table>
+        <thead><tr><th>Ticker</th><th>Close</th><th>RSI(2)</th><th>Residual 5d</th><th>Stop</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+  }
+
+  /* ---- survivors table ---- */
+  const S=[["market_drop","+0.042","+0.094","yes"],["connors_rsi2_strict","+0.040","−0.031","no"],
+           ["down_5days","+0.024","−0.004","no"],["cum_rsi","+0.018","+0.001","no"],
+           ["connors_rsi2","+0.017","+0.002","no"],["bb_lower","+0.008","−0.004","no"],
+           ["pullback_3day","+0.009","−0.007","no"],["ibs_low","−0.001","−0.005","no"],
+           ["idio_drop","−0.005","−0.002","no"]];
+  $("#survivors").innerHTML = S.map(([n,d,t,s])=>`<tr>
+    <td class="tk">${n}</td><td class="num">${d}</td>
+    <td class="num ${t.startsWith("+")&&s==="yes"?"pos":t.startsWith("−")?"neg":""}">${t}</td>
+    <td>${s==="yes"?'<span class="pos" style="font-weight:600">survived</span>':'<span style="color:var(--ink-3)">—</span>'}</td></tr>`).join("");
+
+  /* ---- forward test ---- */
+  const F = DATA.forward||{};
+  if(F.days){
+    $("#fwdKpis").innerHTML = `
+      <div class="kpi"><div class="k">Signal days</div><div class="v">${F.days}</div><div class="n">the real sample size</div></div>
+      <div class="kpi"><div class="k">R / day</div><div class="v ${cls(F.r_per_day)}">${sgn(F.r_per_day,3)}</div><div class="n">${sgn(F.ci_lo,2)} to ${sgn(F.ci_hi,2)}</div></div>
+      <div class="kpi"><div class="k">Trades</div><div class="v">${F.trades.toLocaleString()}</div><div class="n">clustered — not independent</div></div>
+      <div class="kpi"><div class="k">Open now</div><div class="v">${F.open}</div><div class="n">paper positions</div></div>`;
+    const enough = F.days>=40, clears = F.ci_lo>0;
+    $("#fwdVerdict").innerHTML = !enough
+      ? `<strong>${F.days} signal days is too few to judge.</strong> The rule fires on roughly
+         47 days a year, so a fair reading needs about a year. The interval currently
+         ${clears?"clears":"spans"} zero, which at this sample size means little either way.`
+      : clears ? `<strong>The interval clears zero.</strong> First uncontaminated positive
+         result — encouraging, still early.`
+        : `<strong>The interval spans zero.</strong> No edge confirmed forward.`;
+  } else {
+    $("#fwdKpis").innerHTML = `<div class="kpi"><div class="k">Status</div><div class="v">—</div><div class="n">no closed trades yet</div></div>`;
+    $("#fwdVerdict").textContent = "The forward test has not produced closed trades yet.";
+  }
+
+  $("#gen").textContent = "Snapshot generated " + DATA.generated_at + " · session " + DATA.session
+    + " · " + Object.keys(DATA.tickers).length.toLocaleString() + " names screened";
+
+  initLookup();
+}
+
+/* ---------- breadth chart ---------- */
+function drawChart(R){
+  const h = R.history; if(!h.length) return;
+  const W=760,H=150,PB=18;
+  const xs = i => i/(h.length-1)*W;
+  const mx = Math.max(0.45, ...h.map(d=>d.v));
+  const ys = v => H-PB - (v/mx)*(H-PB-6);
+  const line = h.map((d,i)=>`${i?"L":"M"}${xs(i).toFixed(1)},${ys(d.v).toFixed(1)}`).join("");
+  const area = line+`L${W},${H-PB}L0,${H-PB}Z`;
+  const ty = ys(R.threshold);
+  const last = h[h.length-1];
+  const nActive = h.filter(d=>d.v>R.threshold).length;
+
+  $("#chart").innerHTML = `
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--ink-3)" stop-opacity=".22"/>
+      <stop offset="100%" stop-color="var(--ink-3)" stop-opacity="0"/>
+    </linearGradient></defs>
+    <line x1="0" y1="${H-PB}" x2="${W}" y2="${H-PB}" stroke="var(--line-2)" stroke-width="1"/>
+    <path d="${area}" fill="url(#g)"/>
+    <path d="${line}" fill="none" stroke="var(--ink-2)" stroke-width="1.2" stroke-linejoin="round"/>
+    <line x1="0" y1="${ty}" x2="${W}" y2="${ty}" stroke="var(--signal)" stroke-width="1" stroke-dasharray="4 4" opacity=".85"/>
+    <text x="4" y="${ty-6}" fill="var(--signal)" font-size="10" font-family="IBM Plex Mono,monospace">threshold ${(R.threshold*100).toFixed(0)}%</text>
+    <circle cx="${W}" cy="${ys(last.v)}" r="3.5" fill="${R.active?"var(--signal)":"var(--ink)"}"/>`;
+  $("#chartRange").textContent = h[0].d + " → " + last.d;
+  $("#chartActive").textContent = nActive + " of " + h.length + " sessions above threshold ("
+    + (nActive/h.length*100).toFixed(0) + "%)";
+}
+
+/* ---------- ticker lookup ---------- */
+function initLookup(){
+  const q=$("#q"), out=$("#tickerOut");
+  $("#qhint").textContent = Object.keys(DATA.tickers).length.toLocaleString()+" names in universe";
+  const render = () => {
+    const tk=(q.value||"").trim().toUpperCase();
+    if(!tk){ out.innerHTML=""; return; }
+    const t=DATA.tickers[tk];
+    if(!t){ out.innerHTML=`<div class="verdict no"><strong>${tk}</strong> is not in the universe.
+      This study covers the S&amp;P 500, 400 and 600 — about 1,500 liquid US names.</div>`; return; }
+    const C=[
+      ["Long-term uptrend intact", "price above its 200-day average", t.c1, "dist "+sgn(t.dist200,2)+" ATR"],
+      ["Market broadly oversold", "more than 20% of the universe at RSI(2) below 10", t.c2, (DATA.regime.breadth*100).toFixed(1)+"%"],
+      ["Fall is not company-specific", "beta-adjusted 5-day move above −0.5 ATR", t.c3, sgn(t.resid,2)+" ATR"],
+      ["Short-term washout", "RSI(2) below 10", t.c4, "RSI2 "+fmt(t.rsi2,1)]
+    ];
+    const checks = C.map(([w,s,ok,v])=>`<div class="check ${ok?"yes":"no"}">
+      <div class="box">${ok?"✓":""}</div>
+      <div class="what">${w}<small>${s}</small></div>
+      <div class="val">${v}</div></div>`).join("");
+    const n=C.filter(c=>c[2]).length;
+    const hist = t.hist_n ? `<p class="lede" style="margin-top:18px">Historically this name has met all
+      four conditions <strong>${t.hist_n} times</strong> since 1999, averaging
+      <strong class="${cls(t.hist_r)}">${sgn(t.hist_r,3)}R</strong> per trade with a
+      ${(t.hist_win*100).toFixed(0)}% win rate. Small samples move a lot — treat anything
+      under about 30 occurrences as indicative only.</p>`
+      : `<p class="lede" style="margin-top:18px">This name has never met all four conditions in the study period.</p>`;
+    out.innerHTML = `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <h3 class="tk" style="font-size:22px">${tk}</h3>
+        <span class="session">${t.sector} · last close ${fmt(t.close)}</span></div>
+      <div class="checks">${checks}</div>
+      <div class="verdict ${t.fires?"yes":"no"}">${ t.fires
+        ? "<strong>All four conditions hold.</strong> This name is a candidate at tomorrow's open under the rule described in <em>How it works</em>."
+        : `<strong>${n} of 4 conditions hold — not a candidate.</strong> ${
+            !t.c2 ? "The binding constraint is the market, not this stock: breadth is below the threshold, so nothing qualifies today."
+                  : "The market condition is met, but this name does not pass the remaining filters." }` }</div>
+      ${hist}`;
+  };
+  q.addEventListener("input", render);
+}
+boot();
+</script>

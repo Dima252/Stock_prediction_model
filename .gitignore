@@ -1,0 +1,13 @@
+.venv/
+data/
+# Study outputs are committed: they are the evidence behind FINDINGS.md, and the
+# archived ones CANNOT be regenerated (their scripts target setups that no longer
+# exist). Only the daily-churning trade dump is excluded.
+reports/forward_closed_trades.csv
+__pycache__/
+*.pyc
+*.parquet
+
+# site output is regenerated daily; only the template is source
+site/index.html
+site/snapshot.json
