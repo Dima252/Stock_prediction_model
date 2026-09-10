@@ -1,39 +1,16 @@
-# Swing-trade statistics engine
+# Oversold Breadth Monitor
 
-**A quantitative study of swing-trading setups on 27 years of US equities — and an honest account of what survived.**
+**A mean-reversion rule for US equities, running live and logging every decision in public.**
 
-1,499 stocks · 7.85M daily bars · 1999–2025 · 1.78M labelled trades · 16 setups tested
+When the broad market sells off — not one company, the whole tape — stocks in long-term
+uptrends tend to bounce within a couple of days. This tracks that, on 1,500 US names, and
+publishes what it finds every trading day.
 
-The headline result is negative, and that is the point. A machine-learning layer was
-built, tuned across 15 configurations, and **discarded because it did not survive
-out-of-sample testing**. Three famous breakout systems were implemented to their
-authors' published criteria and **lost money against a random-stock benchmark**. One
-four-line rule survived, and it is now being paper-traded forward in public.
-
-📊 **[Live monitor](https://dima252.github.io/Stock_prediction_model/docs/)** — today's market state, rebuilt nightly
-📄 **[Full findings](FINDINGS.md)** — the complete study, including what failed
+**→ [Live monitor](https://dima252.github.io/Stock_prediction_model/docs/)** · **[Full study](FINDINGS.md)**
 
 ---
 
-## The most useful thing in this repo
-
-Before testing any strategy, the validation harness was fed **pure random noise**.
-A correct harness must find nothing in it.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/null-test-dark.svg">
-  <img alt="Purged cross-validation finds AUC 0.4986 on pure noise; naive k-fold finds 0.5610 and fabricates +0.649R per trade" src="docs/figures/null-test-light.svg">
-</picture>
-
-An ordinary cross-validation **invents an AUC of 0.561 and +0.65R per trade out of data
-containing no signal whatsoever** — squarely inside the range people report as a
-discovered edge. The cause is overlapping labels: trades that share calendar time land
-on both sides of the split.
-
-If a backtest has not been tested against noise, its results are unfalsifiable. This one
-was, and `scripts/00_null_test.py` reproduces it in two minutes.
-
-## What survived
+## The rule
 
 ```python
 (dist_sma200_atr > 0)          # the stock's long-term uptrend is intact
@@ -43,136 +20,85 @@ was, and `scripts/00_null_test.py` reproduces it in two minutes.
 ```
 
 Entry at the next open. Exit when the close recovers above its 5-day average, a stop one
-ATR below entry, or ten sessions — whichever comes first.
+ATR below entry, or ten sessions — whichever comes first. Typical hold: **2.2 sessions**.
+
+Four conditions, no model. The third is the one people find surprising: the rule
+deliberately **excludes** stocks falling on their own. A stock falling alone is falling for
+a company-specific reason, and that reason does not resolve itself in five days. A stock
+falling because *everything* is falling has no such reason attached to it.
+
+The second condition is market-wide, which makes this a market-timing signal more than a
+stock-picking one. It clears its threshold on about **17% of trading days**. The other 83%
+the monitor says nothing, and that is the correct output.
+
+## What it is doing right now
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/forward-test-dark.svg">
+  <img alt="Live forward test: mean R per market episode, most positive, two large episodes dominating" src="docs/figures/forward-test-light.svg">
+</picture>
+
+Every signal is logged the day it fires, entries and exits are computed by the same code
+that ran the study, and nothing is revised afterwards. **No orders are placed.**
+
+```bash
+./.venv/Scripts/python.exe scripts/13_forward_log.py --report-only
+```
+
+**Read it per signal day, never per trade.** Signals arrive in clusters — one selloff can
+span several sessions and produce hundreds of positions that all share a single market
+bounce. Averaging over trades treats that as hundreds of independent observations and
+reports an interval several times too narrow. The report refuses to draw a conclusion below
+40 signal days; at ~47 active days a year, a fair reading takes about a year.
+
+## What it was measured against
+
+Not "the market" and not "all trades" — a set of randomly chosen liquid stocks bought **on
+the same day**. That removes the market, the regime and the calendar in one step, and it is
+the number worth looking at.
 
 | | Trades | R / trade | Same-day edge | 95% CI |
 |---|---|---|---|---|
 | Development 1999–2020 | 38,745 | +0.061 | **+0.042** | [+0.007, +0.079] |
 | Out-of-sample 2021–2025 | 12,627 | +0.113 | **+0.094** | [+0.032, +0.157] |
 
-"Edge" is measured against randomly chosen liquid stocks bought **on the same day** — a
-benchmark that removes the market, the regime and the calendar in one step.
+Every decision — features, conditions, exit — was made on data up to 2020. The 2021–2025
+period was scored once, at the end.
 
-### How it was found is the interesting part
-
-The obvious hypothesis is that a stock falling **on its own** should rebound hardest.
-That was built first, as `idio_drop`, and it came out **negative in all twelve exit
-schemes tested**.
-
-In hindsight the reason is clear: a stock falling alone is falling for a company-specific
-reason, and that reason does not resolve itself in five days. A stock falling because
-*everything* is falling has no such reason attached to it. **Inverting the failed
-hypothesis produced the best rule in the study.**
-
-## What did not survive
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/setup-survival-dark.svg">
-  <img alt="Ten reversion setups plotted by development and out-of-sample edge; only market_drop survives" src="docs/figures/setup-survival-light.svg">
-</picture>
-
-Four setups cleared zero in development. **One cleared it out of sample** — roughly what
-chance produces among four marginal candidates, which is precisely why the holdout exists.
-
-**The famous breakout systems lost money.** Minervini's volatility-contraction breakout,
-O'Neil's CANSLIM pivot and Darvas boxes were implemented with the trend templates,
-relative-strength ranking, base-depth and market-regime filters their authors specify,
-and given a 60-day trailing stop with no profit target so winners could run. All three
-**underperformed buying random liquid stocks and trailing them**, by 0.16 to 0.27R per
-trade, in development and out of sample.
-
-The one trend entry that did work was Weinstein's stage 2 — an *early* entry as price
-clears a rising 30-week average, not an *extended* entry at a breakout pivot.
-
-**Gradient boosting added nothing.** All twelve LightGBM configurations had *negative*
-Brier skill — worse calibrated than a constant. A regularised logistic regression beat
-every one of them, and a bucketed histogram with no ML at all beat most.
-
-## Judge exits by capital, not by trade
+## Why the exit is a recovery signal, not a profit target
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/exit-ranking-dark.svg">
   <img alt="Twelve exit schemes ranked by return per trade and by return per day held; the ordering inverts" src="docs/figures/exit-ranking-light.svg">
 </picture>
 
-Widening an exit raised return per trade **monotonically, all the way to the edge of the
-search grid** — so the grid was extended, and it kept rising. The trade had quietly
-stopped being mean reversion and become buy-and-hold.
+Twelve exit schemes were compared. Ranked by return per trade, wider brackets win — but
+they hold positions four times longer. Ranked by **return per day of capital committed**,
+the ordering completely inverts.
 
-Ranked by return per day of capital committed, the ordering completely inverts. Connors'
-own exit rule — close above the 5-day average, ~2.2 sessions — wins once capital
-recycling is counted.
+The widest bracket looks twice as good per trade and is half as good per unit of capital.
+It had quietly stopped being a mean-reversion trade and become buy-and-hold.
 
-## Four defences that changed conclusions
+## How the validation was checked
 
-Each of these was learned the hard way here, and each one overturned a result.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/null-test-dark.svg">
+  <img alt="Purged cross-validation finds AUC 0.4986 on pure noise; naive k-fold finds 0.5610 and fabricates +0.649R per trade" src="docs/figures/null-test-light.svg">
+</picture>
 
-1. **Purged k-fold with embargo.** Validated on noise first (above).
-2. **Block bootstrap, never event-level intervals.** Trades overlap and share a market
-   factor; the naive interval is **~4× too narrow**.
-3. **Paired same-day benchmarks.** An earlier version measured against a *pooled*
-   benchmark and overstated its result by **~15×**, because the model was concentrating
-   its picks into favourable months and being scored for it.
-4. **The holdout was scored once.** Every decision — features, setups, exits, model — was
-   made on data up to 2020.
+The harness was fed **pure random noise** before it was trusted with anything real. A
+correct one must find nothing in it — and an ordinary cross-validation does not: it invents
+an AUC of 0.561 and +0.65R per trade out of data containing no signal, because trades that
+overlap in time land on both sides of the split.
 
-A fifth applies to the live results: this setup fires in **clusters**. One oversold day
-can produce 180 trades sharing a single market bounce. Averaging over trades treats that
-as 180 independent observations, so everything is reported **per signal day**.
+`scripts/00_null_test.py` reproduces that in two minutes. Three further defences follow
+from it, and all three are used throughout:
 
-## Live forward test
+- **Purged k-fold with embargo**, so overlapping trades cannot straddle a split
+- **Block bootstrap intervals** — event-level intervals here are ~4× too narrow
+- **Paired same-day benchmarks**, so a strategy cannot be credited for market timing
 
-The rule is paper-traded forward, logged automatically each trading day. No orders are
-placed. This is the only evidence nothing has contaminated.
-
-**→ [dima252.github.io/Stock_prediction_model/docs](https://dima252.github.io/Stock_prediction_model/docs/)**
-
-```bash
-./.venv/Scripts/python.exe scripts/13_forward_log.py --report-only   # same thing, locally
-```
-
-The report gates its own verdict on **distinct signal days**, not trades, and refuses to
-draw a conclusion below 40. At ~47 active days a year, a fair reading takes about a year.
-
-Signal days also arrive in clusters — one selloff can span several sessions and produce
-hundreds of trades sharing a single market bounce. The monitor groups adjacent days into
-**episodes** for exactly this reason: at the time of writing, 26 signal days collapse into
-14 independent market events, and two of them hold over half of all trades.
-
-### How the page stays current
-
-A scheduled task runs after each US close:
-
-```
-13_forward_log.py   fetch, scan for signals, resolve open positions
-14_build_site.py    rebuild docs/index.html from the day's panel
-git commit && push  only when docs/ actually changed
-```
-
-GitHub Pages serves `docs/` from `main`, so the published page updates itself with no
-server, no API and no database. The whole site is one self-contained HTML file with the
-day's data embedded (~136 KB).
-
-That is not a shortcut: `oversold_breadth` is a property of the **entire universe** on a
-given day, so a per-ticker request would have to load all 1,500 names anyway. Precomputing
-the snapshot nightly and letting the browser do the lookup is both simpler and faster than
-any backend.
-
-## Try it on your own setups
-
-Each setup is a single boolean over the feature frame. Replace them in
-[`src/setups.py`](src/setups.py), keep `any_liquid` as the control, and rerun:
-
-```bash
-./.venv/Scripts/python.exe scripts/02_build_events.py   # ~1 min
-./.venv/Scripts/python.exe scripts/03_baseline.py       # ~1 min, kill gate
-```
-
-The control is the whole point: it tells you whether a setup beats buying something at
-random. Three of the five setups in the first pass looked profitable and were **worse
-than the control**.
-
-## Setup
+## Running it
 
 ```bash
 py -3.13 -m venv .venv                                  # 3.13 specifically
@@ -187,44 +113,69 @@ py -3.13 -m venv .venv                                  # 3.13 specifically
 |---|---|
 | `00_null_test.py` | Proves the harness finds no edge in pure noise |
 | `01_download.py` | Universe (S&P 500 + 400 + 600) and 25y of daily bars |
-| `02_build_events.py` | Features, setups, triple-barrier labels |
+| `02_build_events.py` | Features, conditions, triple-barrier labels |
 | `03_baseline.py` | Empirical baseline and kill gate |
-| `10_family_models.py` | Trend vs reversion, per-family models |
-| `11_reversion_lab.py` | 12 exit schemes × 10 setups |
-| `12_reversion_final.py` | Final model, portfolio simulation, holdout |
-| `13_forward_log.py` | Daily paper-trade logger |
-| `14_build_site.py` · `15_build_figures.py` | Monitor and README figures |
+| `11_reversion_lab.py` | Exit-scheme comparison |
+| `12_reversion_final.py` | Holdout scoring and portfolio simulation |
+| `13_forward_log.py` | **Daily paper-trade logger** |
+| `14_build_site.py` · `15_build_figures.py` | Monitor and figures |
 
-`scripts/archive/` holds six superseded investigations, kept because FINDINGS.md cites
-them.
+### Testing your own conditions
+
+Each condition set is a single boolean over the feature frame. Replace them in
+[`src/setups.py`](src/setups.py), keep `any_liquid` as the control, and rerun
+`02_build_events.py` then `03_baseline.py` — about 90 seconds end to end.
+
+Keep the control. It is what tells you whether a rule beats buying something at random,
+and that is a much higher bar than it sounds.
+
+## How the page stays current
+
+A scheduled task runs after each US close:
+
+```
+13_forward_log.py   fetch, scan for signals, resolve open positions
+14_build_site.py    rebuild docs/index.html from the day's panel
+git commit && push  only when docs/ actually changed
+```
+
+GitHub Pages serves `docs/`, so the published page updates itself with no server, no API
+and no database — one self-contained HTML file with the day's data embedded (~136 KB).
+
+That is not a shortcut. `oversold_breadth` is a property of the **entire universe** on a
+given day, so a per-ticker request would have to load all 1,500 names anyway. Precomputing
+nightly and letting the browser do the lookup is simpler and faster than any backend.
 
 ## Layout
 
 ```
 src/labeling.py     triple-barrier labeller  ← the primitive everything inherits
 src/features.py     99 causal, stationary features
-src/setups.py       setup definitions        ← edit these
-src/validation.py   purged CV, CPCV, block bootstrap, null test
+src/setups.py       condition definitions    ← edit these
+src/validation.py   purged CV, block bootstrap, null test
 src/live.py         forward-test logger (paper only)
 tests/              18 tests: synthetic labeller paths + live/backtest equivalence
 ```
 
 `tests/test_live_matches_backtest.py` replays the live logger over history and asserts it
-reproduces the study exactly — currently **3,056 trades, max |ΔR| 5×10⁻⁶**. Without that,
-any live/backtest gap would be indistinguishable from a code difference.
+reproduces the study exactly — currently **3,056 trades, max |ΔR| 5×10⁻⁶**. Without it, any
+gap between live and backtest results would be indistinguishable from a code difference.
 
 ## Limits
 
-- **The edge is not confirmed.** The forward test is the real test and has nowhere near
-  enough observations yet.
-- **The holdout was read more than once** across the project's iterations. The rule was
-  selected on development data before it was read, which protects it, but the published
-  interval does not price in the full search.
+- **The edge is not confirmed.** The forward test is the real test and does not yet have
+  enough observations. Everything above is a reason to keep watching, not a result.
+- **Positive in only 59% of years.** 2002, 2013 and 2018 were clearly negative. A losing
+  stretch is expected behaviour, not evidence of breakage.
 - **Survivorship bias is present and unfixed.** The universe is current index membership,
   so delisted companies are missing. This inflates results, including the benchmark.
-- **Positive in only 59% of years.** 2002, 2013 and 2018 were clearly negative.
+- **Costs.** The edge is robust to slippage because the benchmark pays it too, but raw
+  returns go negative beyond roughly 35bps round trip.
 - **Data is via `yfinance`**, which is not licensed for redistribution or commercial use.
   Fine for private research; a public deployment needs a proper vendor.
+
+[FINDINGS.md](FINDINGS.md) has the full study, including the alternatives that were tested
+and rejected along the way.
 
 > **Not investment advice.** This is a research project documenting a statistical study.
 > It reports what has happened historically under specific conditions; it does not predict

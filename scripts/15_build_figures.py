@@ -185,7 +185,53 @@ def fig_survival(C):
     return svg(W, H, "".join(b))
 
 
-FIGS = {"null-test": fig_nulltest, "exit-ranking": fig_exits, "setup-survival": fig_survival}
+# ---------------------------------------------------------------- figure 4
+def fig_forward(C):
+    """The live paper-trade record, by market episode."""
+    import json
+    snap = json.loads((Path(__file__).resolve().parent.parent
+                       / "site" / "snapshot.json").read_text(encoding="utf-8"))
+    F = snap.get("forward", {})
+    eps = F.get("episodes", [])
+    if not eps:
+        return svg(720, 60, txt(0, 30, "no forward data yet", C["mid"], 13))
+
+    W, H = 720, 250
+    PB, MID = 34, 120
+    mx = max(0.7, max(abs(e["r"]) for e in eps))
+    tot = sum(e["trades"] for e in eps)
+    b = [txt(0, 20, "Live forward test, one bar per market episode", C["fg"], 15,
+             weight="600"),
+         txt(0, 40, f"{F['days']} signal days group into {len(eps)} independent selloffs. "
+             f"Bar width is trade count.", C["mid"], 12)]
+    gap, x = 3, 0
+    avail = W - gap * (len(eps) - 1)
+    for e in eps:
+        w = max(6, e["trades"] / tot * avail)
+        hgt = abs(e["r"]) / mx * 66
+        y = MID - hgt if e["r"] >= 0 else MID
+        col = C["good"] if e["r"] >= 0 else C["bad"]
+        b.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" '
+                 f'height="{max(1,hgt):.1f}" fill="{col}" opacity=".85" rx="1"/>')
+        if w > 34:
+            b.append(txt(x + w / 2, H - PB + 14, e["start"][5:], C["mid"], 9,
+                         anchor="middle", mono=True))
+        x += w + gap
+    b += [f'<line x1="0" y1="{MID}" x2="{W}" y2="{MID}" stroke="{C["mid"]}" stroke-width="1"/>',
+          txt(0, 62, "mean R", C["mid"], 10, mono=True)]
+    npos = sum(1 for e in eps if e["r"] > 0)
+    big = sorted(eps, key=lambda e: -e["trades"])[:2]
+    share = sum(e["trades"] for e in big) / tot * 100
+    y = H - PB + 30
+    b += [f'<line x1="0" y1="{y-14}" x2="{W}" y2="{y-14}" stroke="{C["faint"]}"/>',
+          txt(0, y + 4, f"{npos} of {len(eps)} episodes positive  ·  "
+              f"R/day {F['r_per_day']:+.3f}, 95% CI {F['ci_lo']:+.3f} to {F['ci_hi']:+.3f}  ·  "
+              f"the two largest hold {share:.0f}% of all trades", C["fg"], 12)]
+    return svg(W, H, "".join(b))
+
+
+FIGS = {"null-test": fig_nulltest, "exit-ranking": fig_exits,
+        "setup-survival": fig_survival, "forward-test": fig_forward}
 
 if __name__ == "__main__":
     for name, fn in FIGS.items():
