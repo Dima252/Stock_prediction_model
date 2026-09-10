@@ -10,7 +10,8 @@ out-of-sample testing**. Three famous breakout systems were implemented to their
 authors' published criteria and **lost money against a random-stock benchmark**. One
 four-line rule survived, and it is now being paper-traded forward in public.
 
-📊 **[Live monitor](https://claude.ai/code/artifact/006bb042-1d66-4c68-b9da-f3ebd2fb1060)** · 📄 **[Full findings](FINDINGS.md)**
+📊 **[Live monitor](https://dima252.github.io/Stock_prediction_model/docs/)** — today's market state, rebuilt nightly
+📄 **[Full findings](FINDINGS.md)** — the complete study, including what failed
 
 ---
 
