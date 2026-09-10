@@ -125,12 +125,38 @@ as 180 independent observations, so everything is reported **per signal day**.
 The rule is paper-traded forward, logged automatically each trading day. No orders are
 placed. This is the only evidence nothing has contaminated.
 
+**→ [dima252.github.io/Stock_prediction_model/docs](https://dima252.github.io/Stock_prediction_model/docs/)**
+
 ```bash
-./.venv/Scripts/python.exe scripts/13_forward_log.py --report-only
+./.venv/Scripts/python.exe scripts/13_forward_log.py --report-only   # same thing, locally
 ```
 
 The report gates its own verdict on **distinct signal days**, not trades, and refuses to
 draw a conclusion below 40. At ~47 active days a year, a fair reading takes about a year.
+
+Signal days also arrive in clusters — one selloff can span several sessions and produce
+hundreds of trades sharing a single market bounce. The monitor groups adjacent days into
+**episodes** for exactly this reason: at the time of writing, 26 signal days collapse into
+14 independent market events, and two of them hold over half of all trades.
+
+### How the page stays current
+
+A scheduled task runs after each US close:
+
+```
+13_forward_log.py   fetch, scan for signals, resolve open positions
+14_build_site.py    rebuild docs/index.html from the day's panel
+git commit && push  only when docs/ actually changed
+```
+
+GitHub Pages serves `docs/` from `main`, so the published page updates itself with no
+server, no API and no database. The whole site is one self-contained HTML file with the
+day's data embedded (~136 KB).
+
+That is not a shortcut: `oversold_breadth` is a property of the **entire universe** on a
+given day, so a per-ticker request would have to load all 1,500 names anyway. Precomputing
+the snapshot nightly and letting the browser do the lookup is both simpler and faster than
+any backend.
 
 ## Try it on your own setups
 
