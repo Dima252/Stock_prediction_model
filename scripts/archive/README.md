@@ -1,6 +1,6 @@
 # Archived investigation scripts
 
-These produced conclusions recorded in `FINDINGS.md` and are kept so those
+These produced the conclusions the project rests on and are kept so those
 conclusions stay checkable. **They are not part of the working pipeline**, and
 several were written against setup definitions that have since been replaced —
 expect to adjust them before re-running.

@@ -42,7 +42,7 @@ pd.set_option("display.max_columns", 40)
 # as a consistency check) but excluded from the forward statistics.
 STUDY_END = "2025-12-30"
 
-# Backtest reference numbers, from FINDINGS.md v3. Live is compared to these.
+# Backtest reference numbers for the holdout period. Live is compared to these.
 BACKTEST = {"r_net": 0.1127, "win_rate": None, "hold_days": 2.25,
             "same_day_edge": 0.0936, "edge_lo": 0.0324, "edge_hi": 0.1570}
 

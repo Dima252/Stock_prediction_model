@@ -6,7 +6,7 @@ When the broad market sells off — not one company, the whole tape — stocks i
 uptrends tend to bounce within a couple of days. This tracks that, on 1,500 US names, and
 publishes what it finds every trading day.
 
-**→ [Live monitor](https://dima252.github.io/Stock_prediction_model/docs/)** · **[Full study](FINDINGS.md)**
+**→ [Live monitor](https://dima252.github.io/Stock_prediction_model/docs/)** — today's market state, rebuilt nightly
 
 ---
 
@@ -41,6 +41,26 @@ the monitor says nothing, and that is the correct output.
 Every signal is logged the day it fires, entries and exits are computed by the same code
 that ran the study, and nothing is revised afterwards. **No orders are placed.**
 
+As of 2026-09-10:
+
+| | |
+|---|---|
+| **Signal days** | **26** |
+| **Independent episodes** | **14** |
+| R per day | **+0.1185** [−0.076, +0.293] |
+| Win rate | 0.743 |
+| Mean hold | 2.12 sessions (study: 2.25) |
+| Trades closed | 801 |
+
+**The interval spans zero. Nothing is established yet.** It is also running hot — a
+0.743 win rate against a study-wide 0.584 — which is a favourable stretch rather than a
+code difference: the equivalence test asserts the live path reproduces the study exactly,
+hold time matches, and the study's own best years reached 0.763 and 0.731. Good years
+regress.
+
+Two episodes hold 53% of all trades; dropping both leaves +0.1364 on the remainder, so
+the result does not rest on a single lucky event.
+
 ```bash
 ./.venv/Scripts/python.exe scripts/13_forward_log.py --report-only
 ```
@@ -64,6 +84,10 @@ the number worth looking at.
 
 Every decision — features, conditions, exit — was made on data up to 2020. The 2021–2025
 period was scored once, at the end.
+
+The edge is largely insensitive to trading costs, because the benchmark pays them too:
++0.094 at 8bps becomes +0.088 at 40bps. Raw returns are a different matter — they stay
+positive to roughly 35bps round trip, and are +0.086 at a realistic 15bps.
 
 ## Why the exit is a recovery signal, not a profit target
 
@@ -173,9 +197,8 @@ gap between live and backtest results would be indistinguishable from a code dif
   returns go negative beyond roughly 35bps round trip.
 - **Data is via `yfinance`**, which is not licensed for redistribution or commercial use.
   Fine for private research; a public deployment needs a proper vendor.
-
-[FINDINGS.md](FINDINGS.md) has the full study, including the alternatives that were tested
-and rejected along the way.
+- **It is idle most of the time.** ~47 active days a year, ~50 candidates on those days.
+  Expect long quiet stretches punctuated by busy weeks; that is the design, not a fault.
 
 > **Not investment advice.** This is a research project documenting a statistical study.
 > It reports what has happened historically under specific conditions; it does not predict
