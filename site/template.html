@@ -450,6 +450,25 @@ rsi2 &lt; 10                  # a sharp short-term washout</code></pre>
 const DATA = /*__SNAPSHOT__*/null;
 
 const $ = s => document.querySelector(s);
+
+/* The snapshot stores each ticker as a fixed-order array to keep the committed
+   file small. Expand it back into an object once, at load, so the rest of the
+   code reads normally. `c2` is not stored per ticker - it is the market-wide
+   gate and is the same for every name. */
+function expandTickers(D){
+  if(!D || !D.tickers) return {};
+  const F = D.tfields, S = D.sectors || [], out = {};
+  const c2 = D.regime.active ? 1 : 0;
+  for(const [tk, row] of Object.entries(D.tickers)){
+    const o = {};
+    F.forEach((f, i) => o[f] = row[i]);
+    o.sector = S[o.sec] || "Unknown";
+    o.c2 = c2;
+    out[tk] = o;
+  }
+  return out;
+}
+const TK = expandTickers(DATA);
 const fmt = (v,d=2) => v==null||!isFinite(v) ? "—" : v.toFixed(d);
 const sgn = (v,d=3) => v==null||!isFinite(v) ? "—" : (v>=0?"+":"")+v.toFixed(d);
 const cls = v => v==null?"":v>0?"pos":v<0?"neg":"";
@@ -544,7 +563,7 @@ function boot(){
   }
 
   $("#gen").textContent = "Snapshot generated " + DATA.generated_at + " · session " + DATA.session
-    + " · " + Object.keys(DATA.tickers).length.toLocaleString() + " names screened";
+    + " · " + Object.keys(TK).length.toLocaleString() + " names screened";
 
   initLookup();
 }
@@ -581,18 +600,18 @@ function drawChart(R){
 /* ---------- ticker lookup ---------- */
 function initLookup(){
   const q=$("#q"), out=$("#tickerOut");
-  $("#qhint").textContent = Object.keys(DATA.tickers).length.toLocaleString()+" names in universe";
+  $("#qhint").textContent = Object.keys(TK).length.toLocaleString()+" names in universe";
   const render = () => {
     const tk=(q.value||"").trim().toUpperCase();
     if(!tk){ out.innerHTML=""; return; }
-    const t=DATA.tickers[tk];
+    const t=TK[tk];
     if(!t){ out.innerHTML=`<div class="verdict no"><strong>${tk}</strong> is not in the universe.
       This study covers the S&amp;P 500, 400 and 600 — about 1,500 liquid US names.</div>`; return; }
     const C=[
-      ["Long-term uptrend intact", "price above its 200-day average", t.c1, "dist "+sgn(t.dist200,2)+" ATR"],
-      ["Market broadly oversold", "more than 20% of the universe at RSI(2) below 10", t.c2, (DATA.regime.breadth*100).toFixed(1)+"%"],
-      ["Fall is not company-specific", "beta-adjusted 5-day move above −0.5 ATR", t.c3, sgn(t.resid,2)+" ATR"],
-      ["Short-term washout", "RSI(2) below 10", t.c4, "RSI2 "+fmt(t.rsi2,1)]
+      ["Long-term uptrend intact", "price above its 200-day average", !!t.c1, "dist "+sgn(t.dist200,2)+" ATR"],
+      ["Market broadly oversold", "more than 20% of the universe at RSI(2) below 10", !!t.c2, (DATA.regime.breadth*100).toFixed(1)+"%"],
+      ["Fall is not company-specific", "beta-adjusted 5-day move above −0.5 ATR", !!t.c3, sgn(t.resid,2)+" ATR"],
+      ["Short-term washout", "RSI(2) below 10", !!t.c4, "RSI2 "+fmt(t.rsi2,1)]
     ];
     const checks = C.map(([w,s,ok,v])=>`<div class="check ${ok?"yes":"no"}">
       <div class="box">${ok?"✓":""}</div>

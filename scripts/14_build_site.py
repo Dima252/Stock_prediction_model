@@ -82,25 +82,46 @@ def main() -> None:
               .to_dict("index"))
     uni = pd.read_parquet(PROCESSED / "universe.parquet").set_index("ticker")
 
+    # Compact encoding. This file is regenerated and committed every night, so
+    # its size becomes repository history. Three easy wins over the obvious
+    # object-per-ticker form:
+    #   - fixed-order arrays, so 12 key names are not repeated 1,500 times
+    #   - sector strings interned into a lookup table
+    #   - c2 dropped entirely: it is the market-wide gate, identical for every
+    #     ticker, and already present as regime.active
+    # Cuts the payload roughly threefold with no loss of information.
     fired_set = set(fired_today["ticker"])
+    sectors, sec_idx = [], {}
+
+    def _sec(name):
+        if name not in sec_idx:
+            sec_idx[name] = len(sectors); sectors.append(name)
+        return sec_idx[name]
+
+    def _r(v, nd=3):
+        return None if v is None or not np.isfinite(v) else round(float(v), nd)
+
+    def _b(cond, val):
+        return None if pd.isna(val) else int(cond)
+
     tickers = {}
     for _, r in today.iterrows():
         tk = r["ticker"]
-        h = hist.get(tk)
-        tickers[tk] = {
-            "sector": uni["sector"].get(tk, "Unknown"),
-            "close": r["close"],
-            "c1": bool(r["dist_sma200_atr"] > 0) if pd.notna(r["dist_sma200_atr"]) else None,
-            "c2": bool(breadth > BREADTH_ON),
-            "c3": bool(r["resid_ret5_atr"] > -0.5) if pd.notna(r["resid_ret5_atr"]) else None,
-            "c4": bool(r["rsi2"] < 10) if pd.notna(r["rsi2"]) else None,
-            "rsi2": r["rsi2"], "resid": r["resid_ret5_atr"],
-            "dist200": r["dist_sma200_atr"],
-            "fires": tk in fired_set,
-            "hist_n": (h or {}).get("n"), "hist_r": (h or {}).get("mean_r"),
-            "hist_win": (h or {}).get("win"),
-        }
-    print(f"ticker snapshot: {len(tickers):,} names")
+        h = hist.get(tk) or {}
+        tickers[tk] = [
+            _sec(uni["sector"].get(tk, "Unknown")),
+            _r(r["close"], 2),
+            _b(r["dist_sma200_atr"] > 0, r["dist_sma200_atr"]),
+            _b(r["resid_ret5_atr"] > -0.5, r["resid_ret5_atr"]),
+            _b(r["rsi2"] < 10, r["rsi2"]),
+            _r(r["rsi2"], 1), _r(r["resid_ret5_atr"], 2), _r(r["dist_sma200_atr"], 2),
+            int(tk in fired_set),
+            h.get("n"), _r(h.get("mean_r")), _r(h.get("win"), 3),
+        ]
+    # field order for the browser, so the encoding is self-describing
+    TFIELDS = ["sec", "close", "c1", "c3", "c4", "rsi2", "resid", "dist200",
+               "fires", "hist_n", "hist_r", "hist_win"]
+    print(f"ticker snapshot: {len(tickers):,} names, {len(sectors)} sectors")
 
     # ------------------------------------------------------- forward journal
     fwd = {}
@@ -159,6 +180,8 @@ def main() -> None:
                    "history": [{"d": pd.Timestamp(d).strftime("%Y-%m-%d"),
                                 "v": round(float(v), 4)} for d, v in daily.items()]},
         "candidates": cands,
+        "tfields": TFIELDS,
+        "sectors": sectors,
         "tickers": tickers,
         "forward": fwd,
     }
@@ -169,10 +192,17 @@ def main() -> None:
 
     tpl = (SITE / "template.html").read_text(encoding="utf-8")
     html = tpl.replace("/*__SNAPSHOT__*/null",
-                       json.dumps(snap, default=jsonable))
+                       json.dumps(snap, default=jsonable, separators=(",", ":")))
     (SITE / "index.html").write_text(html, encoding="utf-8")
     print(f"wrote {SITE/'index.html'}  "
           f"({(SITE/'index.html').stat().st_size/1024:.0f} KB)")
+
+    # docs/ is what GitHub Pages serves; .nojekyll stops Jekyll touching it
+    docs = ROOT / "docs"
+    docs.mkdir(exist_ok=True)
+    (docs / "index.html").write_text(html, encoding="utf-8")
+    (docs / ".nojekyll").write_text("", encoding="utf-8")
+    print(f"wrote {docs/'index.html'}  ({(docs/'index.html').stat().st_size/1024:.0f} KB)")
 
 
 if __name__ == "__main__":

@@ -8,8 +8,12 @@ __pycache__/
 *.pyc
 *.parquet
 
-# site output is regenerated daily; only the template is source
+# site/ holds the local build; only the template is source there
 site/index.html
 site/snapshot.json
+
+# docs/index.html IS tracked - GitHub Pages serves it, and the nightly job
+# commits it so the published page stays current. Kept compact (~136 KB) so
+# a daily commit does not bloat history.
 
 # docs/figures are committed: the README renders them on GitHub
