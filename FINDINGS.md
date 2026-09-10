@@ -1,14 +1,20 @@
-# Findings — v3 (reversion deep-dive)
+# Findings
+
+The complete record of the study behind the [Oversold Breadth Monitor](README.md),
+including the approaches that were tested and rejected. The README describes what is
+running; this describes how it was arrived at and what it is worth.
 
 Universe 1,499 US stocks, 7.85M bars, 1999–2025. 1.78M labelled events.
-Dev 1999–2020, holdout 2021–2025.
+Dev 1999–2020, holdout 2021–2025. Live forward test running since 2025-12-31.
 
 ---
 
-## Correction to v2 first
+## A correction, first
 
-**v2 reported the reversion model at "+0.159 edge, holdout". That number was
-inflated and I no longer stand behind it.**
+An earlier draft of this study reported the reversion **model** at "+0.159 edge on the
+holdout". **That number was inflated and it is retracted.** It is recorded here rather
+than quietly deleted, because the mistake is instructive and the same trap catches most
+strategy backtests.
 
 It compared the model's top decile against the *whole family pool*. Holdout events
 per month range from 973 to 17,326 — an 17.8× swing — so a pool benchmark is not
@@ -104,6 +110,47 @@ results above use it.
   the 5 holdout years. The dev mean is carried by strong years (2009, 2010, 2015,
   2017); 2002, 2018 and 2013 were clearly negative.
 
+## Live forward test — first read
+
+Running since 2025-12-31, logged automatically each trading day, paper only. Numbers
+below are as of **2026-09-10**; the [live monitor](https://dima252.github.io/Stock_prediction_model/docs/)
+always has the current ones.
+
+| | |
+|---|---|
+| Trades closed | 801 |
+| **Signal days** | **26** |
+| **Independent episodes** | **14** |
+| R per day | **+0.1185** [−0.076, +0.293] |
+| R per trade | +0.3239 |
+| Win rate | 0.743 |
+| Mean hold | 2.12 sessions (study: 2.25) |
+
+**The interval spans zero. Nothing is established yet.**
+
+Three things worth recording about this first read.
+
+**The unit of observation matters more than the sample size looks.** 801 trades sound
+like plenty; they are 26 signal days, which are really **14 independent selloffs**. Adjacent
+signal days belong to one market event — 2026-03-05 to 03-13 is a single seven-session
+episode, not seven observations. The trade-level mean of +0.3239 is the number to ignore.
+
+**It is running hot, and that is expected to regress.** Live R/trade is roughly 4× the
+study's +0.0739 and the win rate is 0.743 against a study-wide 0.584. That gap does not
+indicate a code difference — `tests/test_live_matches_backtest.py` asserts the live path
+reproduces the study exactly, and the mean hold matches at 2.12 vs 2.25 sessions. It
+indicates a favourable stretch: the study's own best years reached 0.763 (2017) and 0.731
+(2021). **2026 is behaving like a good year, not like a broken calculation**, and good
+years regress.
+
+**It does not rest on one lucky event.** Two episodes hold 53% of all trades. Dropping
+both leaves 380 trades over 17 days at **+0.1364** [−0.087, +0.336] — a similar point
+estimate on the remainder, with a wider interval. That is the most reassuring thing in the
+table, and it is still not evidence of an edge.
+
+11 of 14 episodes were positive. The three negative ones include 2026-08-19/20 at
+−0.4053, which is a normal-sized loss for a setup positive in 59% of years.
+
 ## Honest limits
 
 - **The holdout has now been read several times.** `market_drop` was pre-selected
@@ -115,7 +162,20 @@ results above use it.
   part of why the same-day paired statistic is the trustworthy one.
 - The ML layer is **not** part of the recommendation. It did not survive.
 
-## What I'd do next
+## What happens next
 
-Forward-test `market_drop` alone, with the signal exit, unmodelled. It is a
-four-line rule; there is nothing to overfit, and the honest next test is time.
+The forward test is running and is the only uncontaminated evidence in this document.
+It needs roughly **40 signal days** before it can say anything, against 26 today — at
+~47 active days a year, that is a matter of months rather than weeks.
+
+Until it gets there the rule does not change. A modified rule is an untested rule, and
+changing it now would reset the clock on the one measurement that has not been
+compromised by the search that produced it.
+
+Three outcomes, all of them informative:
+
+- **The day-level interval clears zero** — the first uncontaminated positive result here,
+  and the point at which position sizing becomes worth discussing.
+- **It continues to span zero** — no edge demonstrated. The most likely outcome, and the
+  reason the study was built to find that out cheaply.
+- **It turns clearly negative** — done, on paper, at no cost.
