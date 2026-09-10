@@ -181,6 +181,7 @@ footer p{max-width:70ch;margin-bottom:8px}
       <button data-t="today" aria-current="true">Today</button>
       <button data-t="ticker">Check a ticker</button>
       <button data-t="how">How it works</button>
+      <button data-t="forward">Forward test</button>
       <button data-t="evidence">The evidence</button>
     </nav>
   </div>
@@ -326,6 +327,44 @@ rsi2 &lt; 10                  # a sharp short-term washout</code></pre>
       <p>All decisions — features, setups, exits, model — were made on data up to 2020. The
       2021–2025 period was scored once, at the end. A test set you tune against is not a test
       set.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FORWARD ================= -->
+<section class="section" data-s="forward">
+  <div class="stack">
+    <div class="panel">
+      <span class="eyebrow">Live, unaudited, paper only</span>
+      <h2 style="margin:8px 0 10px">Forward test</h2>
+      <p class="lede" style="margin-bottom:20px">The rule is logged automatically every
+      trading day and no orders are placed. This is the only evidence that nothing in the
+      study has contaminated — every other number on this site was measured on data that
+      existed when the rule was chosen.</p>
+      <div class="kpis" id="fwdKpis2"></div>
+      <div class="callout" id="fwdVerdict2"></div>
+    </div>
+
+    <div class="panel">
+      <span class="eyebrow">Independence</span>
+      <h2 style="margin:8px 0 10px">Every selloff, one bar</h2>
+      <p class="lede" style="margin-bottom:6px">Signal days arrive in clusters: a single
+      selloff can span several sessions and produce hundreds of trades that all share one
+      market bounce. Grouping adjacent days into episodes shows how few independent
+      observations there actually are — bar width is the number of trades.</p>
+      <figure style="margin-top:18px">
+        <svg id="epChart" viewBox="0 0 760 200" role="img" aria-label="Mean R by episode"></svg>
+        <figcaption><span id="epNote"></span></figcaption>
+      </figure>
+    </div>
+
+    <div class="panel">
+      <span class="eyebrow">Log</span>
+      <h2 style="margin:8px 0 16px">Recent signal days</h2>
+      <div class="tblwrap"><table>
+        <thead><tr><th>Session</th><th>Names</th><th>Win rate</th><th>Mean R</th><th></th></tr></thead>
+        <tbody id="recentDays"></tbody>
+      </table></div>
     </div>
   </div>
 </section>
@@ -579,5 +618,58 @@ function initLookup(){
   };
   q.addEventListener("input", render);
 }
-boot();
+
+/* ---------- forward test section ---------- */
+function renderForward(){
+  const F = DATA.forward||{};
+  if(!F.days){ $("#fwdKpis2").innerHTML='<div class="kpi"><div class="k">Status</div><div class="v">—</div><div class="n">no closed trades yet</div></div>'; return; }
+  const eps=F.episodes||[];
+  $("#fwdKpis2").innerHTML = `
+    <div class="kpi"><div class="k">Signal days</div><div class="v">${F.days}</div><div class="n">${eps.length} independent episodes</div></div>
+    <div class="kpi"><div class="k">R / day</div><div class="v ${cls(F.r_per_day)}">${sgn(F.r_per_day,3)}</div><div class="n">95% CI ${sgn(F.ci_lo,2)} to ${sgn(F.ci_hi,2)}</div></div>
+    <div class="kpi"><div class="k">Hold</div><div class="v">${fmt(F.hold,2)}</div><div class="n">study 2.25 sessions</div></div>
+    <div class="kpi"><div class="k">Open / pending</div><div class="v">${F.open}<span style="color:var(--ink-3)"> / ${F.pending||0}</span></div><div class="n">paper positions</div></div>`;
+
+  const enough=F.days>=40, clears=F.ci_lo>0;
+  $("#fwdVerdict2").innerHTML = !enough
+    ? `<strong>${F.days} signal days is too few to judge.</strong> The rule fires on roughly 47
+       days a year, so a fair reading needs about a year. The interval currently
+       ${clears?"clears":"spans"} zero, which at this sample size means little either way.
+       Note also that ${F.days} days collapse into just <strong>${eps.length} independent
+       episodes</strong>.`
+    : clears ? `<strong>The interval clears zero</strong> with ${F.days} signal days.`
+             : `<strong>The interval spans zero.</strong> No edge confirmed forward.`;
+
+  /* episode chart */
+  if(eps.length){
+    const W=760,H=200,PB=26,MID=(H-PB)/2+6;
+    const mx=Math.max(0.7,...eps.map(e=>Math.abs(e.r)));
+    const totT=eps.reduce((a,e)=>a+e.trades,0);
+    let x=0, bars="";
+    const GAP=3, avail=W-GAP*(eps.length-1);
+    eps.forEach(e=>{
+      const w=Math.max(6, e.trades/totT*avail);
+      const hgt=Math.abs(e.r)/mx*(MID-14);
+      const y=e.r>=0?MID-hgt:MID;
+      const col=e.r>=0?"var(--pos)":"var(--neg)";
+      bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1,hgt).toFixed(1)}" fill="${col}" opacity=".85" rx="1"><title>${e.start}${e.end!==e.start?" to "+e.end:""} · ${e.trades} trades · ${sgn(e.r,3)}R</title></rect>`;
+      if(w>34) bars+=`<text x="${(x+w/2).toFixed(1)}" y="${H-10}" fill="var(--ink-3)" font-size="9" text-anchor="middle" font-family="IBM Plex Mono,monospace">${e.start.slice(5)}</text>`;
+      x+=w+GAP;
+    });
+    $("#epChart").innerHTML=`<line x1="0" y1="${MID}" x2="${W}" y2="${MID}" stroke="var(--line-2)" stroke-width="1"/>${bars}
+      <text x="0" y="12" fill="var(--ink-3)" font-size="10" font-family="IBM Plex Mono,monospace">mean R per episode</text>`;
+    const pos=eps.filter(e=>e.r>0).length;
+    const big=[...eps].sort((a,b)=>b.trades-a.trades).slice(0,2);
+    $("#epNote").textContent=`${pos} of ${eps.length} episodes positive · the two largest hold `
+      +`${(big.reduce((a,e)=>a+e.trades,0)/totT*100).toFixed(0)}% of all trades`;
+  }
+
+  $("#recentDays").innerHTML=(F.recent||[]).map(d=>`<tr>
+    <td class="num">${d.d}</td><td class="num">${d.n}</td>
+    <td class="num">${(d.win*100).toFixed(0)}%</td>
+    <td class="num ${cls(d.r)}">${sgn(d.r,3)}</td>
+    <td style="width:120px"><div style="height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden">
+      <div style="height:100%;width:${Math.min(100,Math.abs(d.r)/0.8*100).toFixed(0)}%;background:${d.r>=0?"var(--pos)":"var(--neg)"}"></div></div></td></tr>`).join("");
+}
+boot(); renderForward();
 </script>

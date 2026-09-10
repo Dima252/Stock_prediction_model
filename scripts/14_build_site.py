@@ -111,12 +111,44 @@ def main() -> None:
             days = c.groupby("signal_date")["r_net"].mean()
             rng = np.random.default_rng(7)
             bm = days.to_numpy()[rng.integers(0, len(days), (4000, len(days)))].mean(axis=1)
+
+            # Signal days cluster into EPISODES - one selloff spanning several
+            # sessions is one market event, not several independent draws. This
+            # is the honest picture of how few observations there really are.
+            ds = np.sort(days.index.to_numpy())
+            groups, cur = [], [ds[0]]
+            for d in ds[1:]:
+                if (pd.Timestamp(d) - pd.Timestamp(cur[-1])).days <= 5:
+                    cur.append(d)
+                else:
+                    groups.append(cur); cur = [d]
+            groups.append(cur)
+            episodes = []
+            for gp in groups:
+                sub = c[c.signal_date.isin(gp)]
+                episodes.append({"start": pd.Timestamp(gp[0]).strftime("%Y-%m-%d"),
+                                 "end": pd.Timestamp(gp[-1]).strftime("%Y-%m-%d"),
+                                 "days": len(gp), "trades": len(sub),
+                                 "r": float(sub.r_net.mean())})
+
+            per_day = (c.groupby("signal_date")
+                        .agg(n=("r_net", "size"), r=("r_net", "mean"),
+                             win=("r_net", lambda s: float((s > 0).mean())))
+                        .reset_index().sort_values("signal_date", ascending=False))
+            recent = [{"d": pd.Timestamp(r.signal_date).strftime("%Y-%m-%d"),
+                       "n": int(r.n), "r": float(r.r), "win": float(r.win)}
+                      for r in per_day.head(20).itertuples()]
+
             fwd = {"trades": len(c), "days": len(days),
                    "r_per_day": float(days.mean()),
                    "ci_lo": float(np.quantile(bm, .025)),
                    "ci_hi": float(np.quantile(bm, .975)),
                    "win_rate": float((c.r_net > 0).mean()),
+                   "r_per_trade": float(c.r_net.mean()),
+                   "hold": float(c.hold_days.mean()),
                    "open": int((j.status == "OPEN").sum()),
+                   "pending": int((j.status == "PENDING_ENTRY").sum()),
+                   "episodes": episodes, "recent": recent,
                    "start": str(c.signal_date.min().date())}
 
     snap = {

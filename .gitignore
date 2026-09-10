@@ -11,3 +11,5 @@ __pycache__/
 # site output is regenerated daily; only the template is source
 site/index.html
 site/snapshot.json
+
+# docs/figures are committed: the README renders them on GitHub
