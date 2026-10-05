@@ -19,8 +19,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import PROCESSED, RAW
-from src.live import (SETUP_NAME, build_panel, drop_incomplete_last_bar,
-                      resolve, scan, session_is_final)
+from src.live import (SETUP_NAME, build_panel, coverage_problems,
+                      drop_incomplete_last_bar, resolve, scan, session_is_final)
 
 WARMUP_BARS = 320          # skip while rolling windows are still filling
 TOL = 1e-4
@@ -56,6 +56,20 @@ def test_incomplete_bar_is_dropped():
     mid_session = dt.datetime(2024, 5, 2, 14, 0, tzinfo=dt.timezone.utc)
     out = drop_incomplete_last_bar(px, mid_session)
     assert len(out) == 1 and out["date"].max() == pd.Timestamp("2024-05-01")
+
+
+def test_coverage_guard_rejects_vendor_hole():
+    # 2026-09-22 arrived with 4 of 1,503 names; that must stop the run, while a
+    # single name dropping out of the universe must not
+    days = pd.bdate_range("2024-05-01", periods=5)
+    px = pd.DataFrame([(d, f"T{i}") for d in days for i in range(100)],
+                      columns=["date", "ticker"])
+    assert coverage_problems(px, 100) == []
+    hole = px[~((px.date == days[2]) & (px.ticker != "T0"))]
+    assert len(coverage_problems(hole, 100)) == 1, "an interior hole must be caught"
+    assert len(coverage_problems(hole[hole.date <= days[2]], 100)) == 1, \
+        "a hole on the latest session must be caught"
+    assert coverage_problems(px[px.ticker != "T7"], 100) == []
 
 
 def test_live_signals_match_backtest():

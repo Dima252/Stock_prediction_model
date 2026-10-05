@@ -84,14 +84,35 @@ def drop_incomplete_last_bar(px: pd.DataFrame,
     return px
 
 
-def fetch_recent(tickers: list[str], lookback_days: int = LOOKBACK_DAYS,
-                 batch: int = 150) -> pd.DataFrame:
-    """Download the trailing window for the whole universe plus context symbols."""
+# A vendor hole - a session where most tickers have no bar - passes the clock
+# check above, and everything built across it is silently wrong: rsi2 skips a
+# day, breadth is measured on a handful of names, the "next open" entry lands a
+# session late. Closed trades are never revisited, so a hole that reaches the
+# journal stays there (2026-09-22 arrived with 4 of 1,503 names). Refuse to run
+# on one; the next run retries.
+MIN_COVERAGE = 0.98
+COVERAGE_WINDOW = 30         # recent sessions checked - every bar an open trade touches
+
+
+def session_counts(px: pd.DataFrame, window: int = COVERAGE_WINDOW) -> pd.Series:
+    """Equity names with a bar, for each of the last `window` sessions."""
+    eq = px[~px.ticker.isin(CONTEXT_SYMBOLS)]
+    return eq.groupby("date")["ticker"].nunique().sort_index().iloc[-window:]
+
+
+def coverage_problems(px: pd.DataFrame, expected: int,
+                      min_frac: float = MIN_COVERAGE) -> list[str]:
+    """Recent sessions holding fewer than `min_frac` of the `expected` names."""
+    counts = session_counts(px)
+    floor = int(np.ceil(min_frac * expected))
+    return [f"{pd.Timestamp(d).date()}: {n:,} of ~{expected:,} names"
+            for d, n in counts[counts < floor].items()]
+
+
+def _download(syms: list[str], start: str, batch: int) -> list[pd.DataFrame]:
     import yfinance as yf
 
-    start = (dt.date.today() - dt.timedelta(days=lookback_days)).isoformat()
     frames = []
-    syms = sorted(set(tickers) | set(CONTEXT_SYMBOLS))
     for i in range(0, len(syms), batch):
         chunk = syms[i:i + batch]
         raw = yf.download(chunk, start=start, auto_adjust=True, progress=False,
@@ -112,7 +133,25 @@ def fetch_recent(tickers: list[str], lookback_days: int = LOOKBACK_DAYS,
             s["ticker"] = chunk[0]
             frames.append(s.reset_index())
         print(f"  fetched {min(i+batch, len(syms))}/{len(syms)}")
+    return frames
 
+
+def fetch_recent(tickers: list[str], lookback_days: int = LOOKBACK_DAYS,
+                 batch: int = 150) -> pd.DataFrame:
+    """Download the trailing window for the whole universe plus context symbols."""
+    start = (dt.date.today() - dt.timedelta(days=lookback_days)).isoformat()
+    syms = sorted(set(tickers) | set(CONTEXT_SYMBOLS))
+    frames = _download(syms, start, batch)
+
+    # vendor failures are mostly transient rate limits - one retry recovers them
+    got = {f["ticker"].iloc[0] for f in frames}
+    missing = [s for s in syms if s not in got]
+    if frames and missing:
+        print(f"  retrying {len(missing)} failed symbol(s)")
+        frames += _download(missing, start, batch)
+
+    if not frames:
+        raise RuntimeError("no price data returned - network or vendor is down")
     df = pd.concat(frames, ignore_index=True)
     df.columns = [str(c).lower().replace(" ", "_") for c in df.columns]
     df = df.rename(columns={"index": "date"})

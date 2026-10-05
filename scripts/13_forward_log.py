@@ -30,9 +30,9 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import PROCESSED, REPORTS
-from src.live import (JOURNAL, PRICE_CACHE, build_panel,
+from src.live import (JOURNAL, PRICE_CACHE, build_panel, coverage_problems,
                       drop_incomplete_last_bar, fetch_recent, load_journal,
-                      resolve, save_journal, scan)
+                      resolve, save_journal, scan, session_counts)
 
 pd.set_option("display.width", 220)
 pd.set_option("display.max_columns", 40)
@@ -161,8 +161,19 @@ def main() -> None:
         print("=== fetching recent prices ===")
         uni = pd.read_parquet(PROCESSED / "universe.parquet")
         px = fetch_recent(uni.ticker.tolist())
-        px.to_parquet(PRICE_CACHE, index=False)
         print(f"fetched {len(px):,} rows, {px.ticker.nunique()} symbols")
+
+        # the last good cache sets the expected breadth of the universe, so
+        # names that delist one at a time lower the bar instead of tripping it
+        ref = pd.read_parquet(PRICE_CACHE) if PRICE_CACHE.exists() else px
+        expected = int(session_counts(ref).max())
+        bad = coverage_problems(drop_incomplete_last_bar(px), expected)
+        if bad:
+            print("\nINCOMPLETE DATA - journal and price cache left untouched:")
+            for b in bad:
+                print(f"  {b}")
+            sys.exit(2)
+        px.to_parquet(PRICE_CACHE, index=False)
 
     px = drop_incomplete_last_bar(px)
     if px.empty:
