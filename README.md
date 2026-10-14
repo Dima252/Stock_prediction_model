@@ -1,12 +1,12 @@
 # Oversold Breadth Monitor
 
-**A mean-reversion rule for US equities, running live and logging every decision in public.**
+**A mean-reversion rule for US equities, paper-traded and logged in public until October 2026.**
 
 When the broad market sells off — not one company, the whole tape — stocks in long-term
 uptrends tend to bounce within a couple of days. This tracks that, on 1,500 US names, and
-publishes what it finds every trading day.
+published what it found every trading day until the monitor was archived on 2026-10-14.
 
-**→ [Live monitor](https://dima252.github.io/Stock_prediction_model/docs/)** — today's market state, rebuilt nightly
+**→ [Monitor (archived)](https://dima252.github.io/Stock_prediction_model/docs/)** — final snapshot from the 2026-10-13 session, no longer updated
 
 ---
 
@@ -31,7 +31,11 @@ The second condition is market-wide, which makes this a market-timing signal mor
 stock-picking one. It clears its threshold on about **17% of trading days**. The other 83%
 the monitor says nothing, and that is the correct output.
 
-## What it is doing right now
+## Where the forward test stood
+
+> **Final reading at archive (2026-10-13 session):** 35 signal days, R per day
+> **−0.0122** [−0.185, +0.158], win rate 0.701, 940 trades closed. The interval spans
+> zero; nothing was established. The figure and table below are the earlier 2026-09-10 read.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/forward-test-dark.svg">
@@ -153,9 +157,10 @@ Each condition set is a single boolean over the feature frame. Replace them in
 Keep the control. It is what tells you whether a rule beats buying something at random,
 and that is a much higher bar than it sounds.
 
-## How the page stays current
+## How the page was kept current
 
-A scheduled task runs after each US close:
+Until 2026-10-14, a scheduled task ran after each US close. It is now disabled and the
+page is frozen at its last snapshot.
 
 ```
 13_forward_log.py   fetch, scan for signals, resolve open positions
@@ -163,7 +168,7 @@ A scheduled task runs after each US close:
 git commit && push  only when docs/ actually changed
 ```
 
-GitHub Pages serves `docs/`, so the published page updates itself with no server, no API
+GitHub Pages serves `docs/`, so the published page updated itself with no server, no API
 and no database — one self-contained HTML file with the day's data embedded (~136 KB).
 
 That is not a shortcut. `oversold_breadth` is a property of the **entire universe** on a
